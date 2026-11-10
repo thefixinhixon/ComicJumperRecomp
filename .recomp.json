@@ -27,5 +27,8 @@
     "twisted-pixel",
     "vulkan"
   ],
-  "maintainers": [{ "name": "thefixinhixon", "link": "https://github.com/thefixinhixon" }]
+  "maintainers": [{ "name": "thefixinhixon", "link": "https://github.com/thefixinhixon" }],
+  "links": [
+    { "label": "Releases", "url": "https://github.com/thefixinhixon/ComicJumperRecomp/releases" }
+  ]
 }
