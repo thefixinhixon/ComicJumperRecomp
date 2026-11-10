@@ -1,0 +1,31 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Comic Jumper: The Adventures of Captain Smiley",
+  "system": "Xbox 360",
+  "type": "recomp",
+  "original": {
+    "region": "World",
+    "revision": "XBLA",
+    "serial": "58410A20"
+  },
+  "project": "Comic Jumper Recomp",
+  "status": "playable",
+  "targets": [
+    "Linux"
+  ],
+  "toolchain": "Rexglue",
+  "approach": "Static recompilation with ReXGlue, sharing engine fixes with the 'Splosion Man recomp (same Twisted Pixel engine)",
+  "started": "2026-11-09",
+  "notes": "Boots to gameplay and is playable through the first levels on Linux (Vulkan, tested on RADV). Full game unlocked, options menu with FSR/CAS upscaling and frame limit matching the display, achievements page, Qt launcher and AppImage. Needs your own copy of the XBLA game. Internal resolution 2x is GPU-heavy in the hub.",
+  "help": [
+    "Render-target transfer cost at 2x resolution",
+    "Windows build",
+    "Testing later levels"
+  ],
+  "tags": [
+    "xbla",
+    "twisted-pixel",
+    "vulkan"
+  ],
+  "maintainers": [{ "name": "thefixinhixon", "link": "https://github.com/thefixinhixon" }]
+}
