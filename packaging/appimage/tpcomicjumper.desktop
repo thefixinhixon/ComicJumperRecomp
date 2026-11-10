@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=TP Comic Jumper Launcher
+Comment=Launcher for Comic Jumper: The Adventures of Captain Smiley (Twisted Pixel) Linux recompilation
+Exec=TPComicJumperLauncher
+Icon=tpcomicjumper
+Categories=Game;
+Terminal=false

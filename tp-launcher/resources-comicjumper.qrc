@@ -1,0 +1,12 @@
+<RCC>
+    <!-- Art + theme for the Comic Jumper build (TP_GAME=comicjumper).
+         Same resource aliases as resources.qrc so the shared code
+         (":/assets/...", ":/theme/<game>.qss") works unchanged. -->
+    <qresource prefix="/assets">
+        <file alias="banner.png">assets-comicjumper/banner.png</file>
+        <file alias="icon.png">assets-comicjumper/icon.png</file>
+    </qresource>
+    <qresource prefix="/theme">
+        <file alias="comicjumper.qss">theme/comicjumper.qss</file>
+    </qresource>
+</RCC>

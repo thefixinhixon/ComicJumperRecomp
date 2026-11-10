@@ -1,0 +1,72 @@
+# Codegen speed options (2026-11-10). skip_msr: every mtmsrd r13 region in this game (479) only
+# wraps a lwarx/stwcx. pair, so the emulated "interrupts off" global mutex adds nothing but
+# contention (job-queue counter sub_821BD500 between Main and the Work threads). The *_as_local
+# options keep those PPC registers in host locals. skip_lr / non_volatile_as_local stay off:
+# Lua error handling uses setjmp/longjmp.
+skip_msr = true
+ctr_as_local = false
+xer_as_local = false
+reserved_as_local = false
+cr_as_local = false
+non_argument_as_local = false
+
+# Manual function entries. Seeded from SplosionManRecomp/splosionman_config.toml by masked
+# signature match (same Twisted Pixel "Eg" engine). Comment = SplosionMan address.
+[functions]
+# Lua C functions only reachable through lua_pushcclosure (lis/addi pointer, no .pdata entry).
+# Each starts right after a "li r11,1; b -44" tail fragment, so analysis folded it into the
+# previous function. Found with tools/find_cfuncs.py (callees 821FDA88 / 821FDDE0).
+0x82164958 = { name = "sub_82164958" }  # lua "poGetBaseLinkingActor" (unresolved at runtime -> level geometry missing after respawn)
+0x82154980 = { name = "sub_82154980" }  # lua "bIsSolid"
+0x8252BA48 = { name = "sub_8252BA48" }  # sm 82571068
+0x8256D6F8 = { name = "sub_8256D6F8" }  # sm 8259A9B8
+0x822A8E58 = { name = "sub_822A8E58" }  # sm 822194D4
+0x825E356C = { name = "sub_825E356C" }  # sm 825F8894
+0x822A914C = { name = "sub_822A914C" }  # sm 822197CC
+0x823E34D0 = { name = "sub_823E34D0" }  # sm 82350D78
+0x823E2A8C = { name = "sub_823E2A8C" }  # sm 82350334
+0x822A99F4 = { name = "sub_822A99F4" }  # sm 8221A074
+0x822A9A10 = { name = "sub_822A9A10" }  # sm 8221A090
+0x822A98DC = { name = "sub_822A98DC" }  # sm 82219F5C
+0x827581CC = { name = "sub_827581CC" }  # sm 825F3F7C
+0x825EE1C4 = { name = "sub_825EE1C4" }  # sm 8260502C
+0x825EE13C = { name = "sub_825EE13C" }  # sm 82604FA4
+0x82316238 = { name = "sub_82316238" }  # sm 82270118
+0x823162A8 = { name = "sub_823162A8" }  # sm 82270188
+0x82316440 = { name = "sub_82316440" }  # sm 82270320
+0x823E3630 = { name = "sub_823E3630" }  # sm 82350ED8
+0x825E1010 = { name = "sub_825E1010" }  # sm 825F614C
+0x825E1330 = { name = "sub_825E1330" }  # sm 825F64A4
+0x825EA008 = { name = "sub_825EA008" }  # sm 825F8D10
+0x825EA0AC = { name = "sub_825EA0AC" }  # sm 825F8DB4
+0x825E554C = { name = "sub_825E554C" }  # sm 825FB5C0
+0x825E5928 = { name = "sub_825E5928" }  # sm 825FB9D4
+0x825EA434 = { name = "sub_825EA434" }  # sm 825FFB54
+0x825F0524 = { name = "sub_825F0524" }  # sm 82601B74
+0x825F0A84 = { name = "sub_825F0A84" }  # sm 826020D4
+0x825F0BC4 = { name = "sub_825F0BC4" }  # sm 82602214
+0x825EE14C = { name = "sub_825EE14C" }  # sm 82604FB4
+0x825EEFB0 = { name = "sub_825EEFB0" }  # sm 82605B6C
+0x825F185C = { name = "sub_825F185C" }  # sm 82607194
+0x825F1878 = { name = "sub_825F1878" }  # sm 826071B0
+0x825F18E8 = { name = "sub_825F18E8" }  # sm 82607220
+0x82164F20 = { name = "sub_82164F20" }  # sm 82124170
+0x82434260 = { name = "sub_82434260" }  # sm 823A22F8
+
+# sub_825A0D10: unbounded byte-indexed jump table (lbzx from 0x82078780, base 0x825A0D58, index r11).
+# Auto-detection guessed 513 entries and swallowed the next function. The real table is 13 entries
+# plus 3 zero pad bytes (0x82078780..8F); the next table starts at 0x82078790.
+# Entry 4 points at 0x825A0E60 (next function's prologue) -- identical in 'Splosion Man
+# (sub_825CAB88 case 4 -> sub_825CACD8), where codegen emitted it as a tail call.
+[[switch_tables]]
+address = 0x825A0D54
+register = 11
+labels = [0x825A0D88, 0x825A0D88, 0x825A0D88, 0x825A0D88, 0x825A0E60, 0x825A0D88, 0x825A0D88, 0x825A0D88,
+          0x825A0D88, 0x825A0D58, 0x825A0D88, 0x825A0D88, 0x825A0D58, 0x825A0D58, 0x825A0D58, 0x825A0D58]
+
+# Streaming thread (loop in sub_821C48C8): WaitForMultipleObjects on 4 events; event 2 is a
+# manual-reset "paused" flag the game leaves set, so the loop acks (SetEvent +36) ~7000x/s.
+# Throttle the steady spin; the first acks of a burst stay immediate. See src/hooks.cpp.
+[[midasm_hook]]
+address = 0x821C4A54
+name = "CjStreamingAckThrottle"

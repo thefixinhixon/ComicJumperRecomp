@@ -1,0 +1,12 @@
+# Game data and anything extracted from it (never committed)
+assets
+re/
+*.rar
+*.zip
+*.xex
+*.iso
+# Build output, SDK copy, headless runs, AppImages
+out/
+bin/
+packaging/artifacts/
+*.so
