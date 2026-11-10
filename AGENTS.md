@@ -14,7 +14,8 @@ RTTI classes shared): reuse its fixes, map addresses with `tools/sigmap.py`.
 3. Build only against this repo's private SDK copy `out/sdk`. The SDK's CMake writes its libraries
    and `rexglue` into `${REXSDK_DIR}/out/linux-amd64`, so pointing `REXSDK_DIR` at another
    project's SDK overwrites that project's build (it happened once to SplosionMan).
-4. Commit only when the user asks; never push.
+4. Commit only when the user asks; push only when asked. Public repo:
+   https://github.com/thefixinhixon/ComicJumperRecomp (created 2026-11-10, `.recomp.json` for recomp.fyi).
 
 ## Pipeline
 
@@ -26,8 +27,18 @@ cmake --build out/build/linux-amd64-release -j6
 tools/linux/headless_run.sh boot 60
 ```
 
-SDK changes on top of `out/sdk` @ `6263069` (SplosionMan's house patch, committed there) are kept
-in `patches/comicjumper-sdk.patch`: `git -C out/sdk diff > patches/comicjumper-sdk.patch`.
+All SDK changes (SplosionMan's house patch committed in `out/sdk` up to `6263069`, plus Comic
+Jumper's uncommitted ones) are kept as one patch against upstream `f5337cdc`, the commit CI builds:
+`git -C out/sdk diff f5337cdc947ff6d4c4196737e2c807a48f2a1fc2 > patches/house-sdk.patch`.
+SDK code must also build on Windows (guard POSIX-only calls with `#if !defined(_WIN32)`).
+
+## CI (`.github/workflows/build.yml`)
+
+Push to `main` builds the Linux AppImage (ubuntu:24.04 container, glibc 2.39 floor;
+`packaging/linux/build-release.sh`, locally `packaging/linux/container-build.sh`) and the Windows
+zip (game + launcher in one folder), then replaces the rolling `nightly` pre-release; a `v*` tag
+makes a normal release. Codegen is skipped without `assets/default.xex`, so `generated/` must be
+committed up to date (after `fix-labels.py` / `smart-patch.py`).
 
 ## Things learned
 

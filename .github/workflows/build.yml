@@ -1,0 +1,217 @@
+# Build Linux (AppImage) and Windows (zip) on every push to main and publish
+# them as a release:
+#   push to main   -> rolling pre-release "nightly" (tag moved to the new commit)
+#   push a v* tag  -> a normal release named after the tag
+#   manual run     -> artifacts only (no release)
+#
+# No game data is involved: generated/ is committed, and generated/rexglue.cmake
+# skips codegen when assets/default.xex is absent (as in CI).
+#
+# SDK: upstream rexglue-sdk at REXSDK_COMMIT + patches/house-sdk.patch
+# (regenerate with: git -C out/sdk diff <REXSDK_COMMIT> > patches/house-sdk.patch).
+# Same base and Windows layout as SplosionManRecomp's CI.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - ".recomp.json"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Exact SDK commit patches/house-sdk.patch was generated against. Do not float.
+  REXSDK_COMMIT: f5337cdc947ff6d4c4196737e2c807a48f2a1fc2
+
+jobs:
+  version:
+    name: Version label
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.v.outputs.label }}
+    steps:
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "label=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "label=nightly-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux:
+    name: Linux AppImage (x86_64, glibc 2.39)
+    needs: version
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+    steps:
+      - name: Install git
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies (clang 20, GCC 13 libstdc++, Qt 6.8)
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          packaging/linux/deps-ubuntu2404.sh
+
+      - name: Build game, runtime and launcher; package the AppImage
+        env:
+          WORK: ${{ runner.temp }}/ci
+          VERSION: ${{ needs.version.outputs.label }}
+        run: packaging/linux/build-release.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comicjumper-linux
+          path: ${{ runner.temp }}/ci/*.AppImage
+          if-no-files-found: error
+
+  windows-game:
+    name: Windows game (comicjumper.exe + runtime)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+          fetch-tags: false
+
+      - name: Check out ReXGlue SDK (pinned, LF endings)
+        shell: pwsh
+        # autocrlf off: CRLF files make every hunk of the LF patch fail.
+        run: |
+          git -c core.autocrlf=false clone --no-checkout https://github.com/rexglue/rexglue-sdk.git rexglue-sdk
+          git -C rexglue-sdk -c core.autocrlf=false checkout ${{ env.REXSDK_COMMIT }}
+          git -C rexglue-sdk -c core.autocrlf=false submodule update --init --recursive
+
+      - name: Apply SDK patch
+        shell: pwsh
+        working-directory: rexglue-sdk
+        # The D3D12 presenter hunks are a half-ported feature that only
+        # builds on Linux (where D3D12 is not compiled); Windows keeps upstream's.
+        run: >-
+          git apply --whitespace=nowarn --ignore-whitespace
+          --exclude=include/rex/ui/d3d12/d3d12_presenter.h
+          --exclude=src/ui/d3d12/d3d12_presenter.cpp
+          ../repo/patches/house-sdk.patch
+
+      - name: Configure (win-amd64-release preset, FidelityFX ON)
+        shell: pwsh
+        working-directory: repo
+        run: >
+          cmake --preset win-amd64-release
+          -DREXSDK_DIR="$env:GITHUB_WORKSPACE/rexglue-sdk"
+          -DREXGLUE_ENABLE_FIDELITYFX=ON
+          -DCMAKE_C_FLAGS=-march=x86-64-v2
+          -DCMAKE_CXX_FLAGS=-march=x86-64-v2
+
+      - name: Build
+        shell: pwsh
+        working-directory: repo
+        run: cmake --build --preset win-amd64-release
+
+      - name: Stage the matched game set
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $b = 'repo/out/build/win-amd64-release'
+          Copy-Item "$b/comicjumper.exe" dist/
+          foreach ($n in 'rexruntime.dll', 'rexgpu-xenos.dll', 'amd_fidelityfx_dx12.dll') {
+            $f = Get-ChildItem -Recurse $b, rexglue-sdk/out -Filter $n -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+            if (-not $f) { throw "missing build output: $n" }
+            Copy-Item $f.FullName dist/
+          }
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comicjumper-windows-game
+          path: dist/*
+          if-no-files-found: error
+
+  windows-launcher:
+    name: Windows launcher
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.8 (MSVC 2022 x64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure and build (TP_GAME=comicjumper)
+        shell: pwsh
+        run: |
+          cmake -S tp-launcher -B tp-launcher/out/build/win -G Ninja -DCMAKE_BUILD_TYPE=Release -DTP_GAME=comicjumper
+          cmake --build tp-launcher/out/build/win
+
+      - name: Deploy the Qt runtime next to the exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item tp-launcher/out/build/win/TPComicJumperLauncher.exe dist/
+          windeployqt --release --no-translations dist/TPComicJumperLauncher.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comicjumper-windows-launcher
+          path: dist/**
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, linux, windows-game, windows-launcher]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+
+      - name: Package the Windows zip (game + launcher in one folder)
+        env:
+          LABEL: ${{ needs.version.outputs.label }}
+        run: |
+          mkdir -p "pkg/ComicJumper-windows-$LABEL"
+          cp -r art/comicjumper-windows-launcher/. art/comicjumper-windows-game/. "pkg/ComicJumper-windows-$LABEL/"
+          (cd pkg && zip -qr "../ComicJumper-windows-x86_64-$LABEL.zip" "ComicJumper-windows-$LABEL")
+          cp art/comicjumper-linux/*.AppImage .
+          ls -la *.zip *.AppImage
+
+      - name: Create or replace the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          LABEL: ${{ needs.version.outputs.label }}
+        run: |
+          NOTES="Built from ${GITHUB_SHA::7} by CI. Bring your own game data: the launcher imports your Comic Jumper XBLA package. Linux: run the AppImage. Windows: unzip and run TPComicJumperLauncher.exe."
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            gh release create "$GITHUB_REF_NAME" --title "Comic Jumper Recomp $GITHUB_REF_NAME" \
+              --notes "$NOTES" *.AppImage *.zip
+          else
+            gh release delete nightly --cleanup-tag --yes || true
+            gh release create nightly --prerelease --target "$GITHUB_SHA" \
+              --title "Nightly ($LABEL)" --notes "$NOTES" *.AppImage *.zip
+          fi
