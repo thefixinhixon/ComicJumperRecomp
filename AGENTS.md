@@ -36,8 +36,9 @@ SDK code must also build on Windows (guard POSIX-only calls with `#if !defined(_
 
 Push to `main` builds the Linux AppImage (ubuntu:24.04 container, glibc 2.39 floor;
 `packaging/linux/build-release.sh`, locally `packaging/linux/container-build.sh`) and the Windows
-zip (game + launcher in one folder), then replaces the rolling `nightly` pre-release; a `v*` tag
-makes a normal release. Codegen is skipped without `assets/default.xex`, so `generated/` must be
+zip (game + launcher in one folder) as run artifacts only; a `v*` tag makes the versioned
+release (titled "... (Linux + Windows test build)"). No nightly/rolling releases: the user's repos
+release by version tag only. Codegen is skipped without `assets/default.xex`, so `generated/` must be
 committed up to date (after `fix-labels.py` / `smart-patch.py`). `rexglue codegen` rewrites
 `generated/rexglue.cmake` and drops that `if(EXISTS .../default.xex)` guard: restore it
 (`git checkout generated/rexglue.cmake`) before committing, or CI fails at configure.

@@ -1,8 +1,7 @@
-# Build Linux (AppImage) and Windows (zip) on every push to main and publish
-# them as a release:
-#   push to main   -> rolling pre-release "nightly" (tag moved to the new commit)
-#   push a v* tag  -> a normal release named after the tag
-#   manual run     -> artifacts only (no release)
+# Build Linux (AppImage) and Windows (zip):
+#   push to main / manual run -> workflow artifacts only (on the run page)
+#   push a v* tag             -> a versioned release with both files
+#                                (Windows marked as a test build)
 #
 # No game data is involved: generated/ is committed, and generated/rexglue.cmake
 # skips codegen when assets/default.xex is absent (as in CI).
@@ -46,7 +45,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "label=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
-            echo "label=nightly-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "label=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
   linux:
@@ -181,7 +180,7 @@ jobs:
   release:
     name: Publish release
     needs: [version, linux, windows-game, windows-launcher]
-    if: github.event_name == 'push'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -200,18 +199,13 @@ jobs:
           cp art/comicjumper-linux/*.AppImage .
           ls -la *.zip *.AppImage
 
-      - name: Create or replace the release
+      - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           LABEL: ${{ needs.version.outputs.label }}
         run: |
-          NOTES="Built from ${GITHUB_SHA::7} by CI. Bring your own game data: the launcher imports your Comic Jumper XBLA package. Linux: run the AppImage. Windows: unzip and run TPComicJumperLauncher.exe."
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            gh release create "$GITHUB_REF_NAME" --title "Comic Jumper Recomp $GITHUB_REF_NAME" \
-              --notes "$NOTES" *.AppImage *.zip
-          else
-            gh release delete nightly --cleanup-tag --yes || true
-            gh release create nightly --prerelease --target "$GITHUB_SHA" \
-              --title "Nightly ($LABEL)" --notes "$NOTES" *.AppImage *.zip
-          fi
+          NOTES="Built from ${GITHUB_SHA::7} by CI. Bring your own game data: the launcher imports your Comic Jumper XBLA package. Linux: run the AppImage. Windows (test build, not yet tested on real hardware): unzip and run TPComicJumperLauncher.exe."
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Comic Jumper Recomp $GITHUB_REF_NAME (Linux + Windows test build)" \
+            --notes "$NOTES" *.AppImage *.zip
