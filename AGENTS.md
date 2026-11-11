@@ -40,8 +40,9 @@ zip (game + launcher in one folder) as run artifacts only; a `v*` tag makes the 
 release (titled "... (Linux + Windows test build)"). No nightly/rolling releases: the user's repos
 release by version tag only. Codegen is skipped without `assets/default.xex`, so `generated/` must be
 committed up to date (after `fix-labels.py` / `smart-patch.py`). `rexglue codegen` rewrites
-`generated/rexglue.cmake` and drops that `if(EXISTS .../default.xex)` guard: restore it
-(`git checkout generated/rexglue.cmake`) before committing, or CI fails at configure.
+`generated/rexglue.cmake` from the SDK template on every run (and the build reruns codegen
+whenever `rexglue` relinks); the `if(EXISTS .../default.xex)` guard lives in that template
+(`resources/templates/init/rexglue_cmake.inja`, SDK patch), so the output matches the commit.
 
 ## Things learned
 

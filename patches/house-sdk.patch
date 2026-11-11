@@ -689,6 +689,48 @@ index 68274d2..d1f7cdd 100644
  #include <atomic>
  #include <cassert>
  #include <csetjmp>
+diff --git a/resources/templates/init/rexglue_cmake.inja b/resources/templates/init/rexglue_cmake.inja
+index f39557b..1fdbd3a 100644
+--- a/resources/templates/init/rexglue_cmake.inja
++++ b/resources/templates/init/rexglue_cmake.inja
+@@ -114,17 +114,26 @@ endmacro()
+ # codegen, including one a project assembles itself rather than taking the
+ # library rexglue_setup_target() builds. The stamp comes first: the DEPFILE
+ # names it.
+-add_custom_command(
+-    OUTPUT "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.build.stamp"
+-           {{ cmake_var("REXGLUE_ENTRYPOINT_GENERATED_SOURCES") }}
+-    COMMAND $<TARGET_FILE:rex::rexglue> codegen {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ names.snake_case }}_manifest.toml
+-    DEPFILE "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.d"
+-    WORKING_DIRECTORY {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}
+-    COMMENT "Generating recompiled code for {{ names.snake_case }}"
+-    VERBATIM
+-)
+-add_custom_target({{ names.snake_case }}_codegen
+-    DEPENDS "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.build.stamp")
++# Codegen needs the proprietary default.xex. When it is absent (CI,
++# source-only checkouts), skip the rule entirely and compile the
++# committed generated/ tree as-is; the no-op target keeps the
++# add_dependencies() calls valid. With the XEX present (a real
++# development tree), codegen behaves exactly as upstream.
++if(EXISTS "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/assets/default.xex")
++    add_custom_command(
++        OUTPUT "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.build.stamp"
++               {{ cmake_var("REXGLUE_ENTRYPOINT_GENERATED_SOURCES") }}
++        COMMAND $<TARGET_FILE:rex::rexglue> codegen {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ names.snake_case }}_manifest.toml
++        DEPFILE "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.d"
++        WORKING_DIRECTORY {{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}
++        COMMENT "Generating recompiled code for {{ names.snake_case }}"
++        VERBATIM
++    )
++    add_custom_target({{ names.snake_case }}_codegen
++        DEPENDS "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/codegen.build.stamp")
++else()
++    add_custom_target({{ names.snake_case }}_codegen)
++endif()
+ 
+ # Include DLL module shared library targets if codegen has generated them
+ if(EXISTS "{{ cmake_var("CMAKE_CURRENT_SOURCE_DIR") }}/{{ entrypoint_out_dir }}/dll_targets.cmake")
 diff --git a/src/audio/sdl/sdl_audio_driver.cpp b/src/audio/sdl/sdl_audio_driver.cpp
 index 20a2cd8..8b39d29 100644
 --- a/src/audio/sdl/sdl_audio_driver.cpp
