@@ -307,8 +307,9 @@ std::vector<OptionsMenu::Page> BuildPages(const MenuHost& host) {
     }
     p.items.push_back({"Vibration", "Controller rumble strength.", rumble});
     p.items.push_back({"Keyboard as controller",
-                       "Play with the keyboard: WASD move, Space / ; jump ('splode), Enter "
-                       "start, Tab back. Works alongside a controller.",
+                       "Play with the keyboard: WASD move, arrow keys aim (right stick), "
+                       "Space = A, Backspace = B, L = X, P = Y, Q / E triggers, Enter start, "
+                       "Tab back. Works alongside a controller.",
                        OnOff("mnk_mode")});
     Item hint;
     hint.label = "Open this menu: F1, or click both sticks (L3 + R3)";
