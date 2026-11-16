@@ -17,13 +17,14 @@ RTTI classes shared): reuse its fixes, map addresses with `tools/sigmap.py`.
 4. Commit only when the user asks; push only when asked. Public repo:
    https://github.com/thefixinhixon/ComicJumperRecomp (created 2026-11-10, `.recomp.json` for recomp.fyi).
 
-## SplosionMan's fixes: ported 2026-11-15, Windows check pending
+## SplosionMan's fixes: ported 2026-11-15 (`16eb9c1`), Windows verified under Wine
 
-All three below are in the working tree (CMakeLists.txt, SDK files copied from
-`../SplosionManRecomp/out/sdk`, `patches/house-sdk.patch` regenerated). Checks 2 and 3 pass on
-Linux headless. v1.0's `comicjumper.exe` had 0 `@ImGui@@` imports, which is why users reported
-"Windows doesn't work at all". Still to do: check the next Windows CI artifact (item 1) and run
-it under Wine.
+v1.0's `comicjumper.exe` had 0 `@ImGui@@` imports and crashed at launch under Wine (null read
+`0x1178` in the exe), matching user reports that "Windows doesn't work at all". The CI build of
+`16eb9c1` (run 43800041044) has 39 imports. Under Wine it shows the startup hint, reaches the
+title, and the F1 menu opens over the paused game, moves its selection and closes. Wine runner:
+`out/wine/wine_run.sh` (untracked, adapted from SplosionMan's; `WIN_BUILD=<game + launcher
+artifacts merged>`, display `:95`). Under Wine the title screen comes up at ~60 s, not ~25 s.
 
 These bugs come from code shared with SplosionMan, found there by testing the Windows build under
 Wine. They're fixed in `../SplosionManRecomp` commits `e0c6690`, `94ddaf3` (release v2.2.1,
