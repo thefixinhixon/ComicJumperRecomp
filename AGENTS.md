@@ -17,6 +17,80 @@ RTTI classes shared): reuse its fixes, map addresses with `tools/sigmap.py`.
 4. Commit only when the user asks; push only when asked. Public repo:
    https://github.com/thefixinhixon/ComicJumperRecomp (created 2026-11-10, `.recomp.json` for recomp.fyi).
 
+## SplosionMan's fixes: ported 2026-11-15, Windows check pending
+
+All three below are in the working tree (CMakeLists.txt, SDK files copied from
+`../SplosionManRecomp/out/sdk`, `patches/house-sdk.patch` regenerated). Checks 2 and 3 pass on
+Linux headless. v1.0's `comicjumper.exe` had 0 `@ImGui@@` imports, which is why users reported
+"Windows doesn't work at all". Still to do: check the next Windows CI artifact (item 1) and run
+it under Wine.
+
+These bugs come from code shared with SplosionMan, found there by testing the Windows build under
+Wine. They're fixed in `../SplosionManRecomp` commits `e0c6690`, `94ddaf3` (release v2.2.1,
+SplosionManRecomp issue #2) and `6a176e8`. Comic Jumper has the same code, so expect all three
+here.
+
+1. **Windows: crash about 1 s after launch.** `CMakeLists.txt` links the `imgui` OBJECT library
+   into `comicjumper.exe`, and ImGui is also compiled into `rexruntime.dll`. On Windows the exe
+   then has its own ImGui, whose `GImGui` context nothing ever sets. The first ImGui call from game
+   code (`HintToast` at startup, the F1 `OptionsMenu`, `PerfOverlay`) reads a null context and
+   crashes. Linux merges the two copies, so it never shows there.
+   - Fix: wrap the `target_link_libraries(comicjumper PRIVATE imgui...)` block in
+     `if(NOT WIN32)`. The exe then gets ImGui from rexruntime's import library
+     (`WINDOWS_EXPORT_ALL_SYMBOLS`); game code only includes `imgui.h`, so no data symbols need
+     dllimport. Copy the block and comment from `../SplosionManRecomp/CMakeLists.txt`.
+   - Check on the Windows CI artifact: `llvm-objdump -p comicjumper.exe | grep -c '@ImGui@@'` must
+     be non-zero (v2.2 SplosionMan: 0 = broken; fixed: 39).
+2. **F1 menu freezes the game and never appears (Linux and Windows).** A side effect of the
+   `WantsContinuousRepaint()` change (see "UI repaint loop" below). The achievement toast keeps the
+   `ImGuiDrawer` attached, so `AddDialog` only appends the menu and requests no paint. The menu
+   holds the guest (`menu_pause_game`), so no guest frame paints it either. This also hits the
+   game's own pause-menu "Achievements", which opens the F1 menu.
+   - Fix in `out/sdk/src/ui/imgui_drawer.cpp`: after `dialogs_.push_back(dialog)` in `AddDialog`,
+     add `if (presenter_) presenter_->RequestUIPaintFromUIThread();`. At the end of `RemoveDialog`,
+     do the same when `!dialogs_.empty()`. Copy it from
+     `../SplosionManRecomp/out/sdk/src/ui/imgui_drawer.cpp`, then regenerate
+     `patches/house-sdk.patch`.
+   - The shared SDK `/mnt/sdb1/Games/rexglue-sdk` has the same change (uncommitted, preventive;
+     it never had `WantsContinuousRepaint`), but Comic Jumper doesn't build against it (rule 3).
+   - Headless check: `EXTRA="--show_menu_hint=false"`, F1 once the title is up, then `Down` twice
+     5 s apart. The menu must appear over the paused frame and its selection must move. F1 again
+     must close it and the game must resume.
+3. **One rejected command-line argument drops all of them (Linux and Windows).** `cvar::Init`
+   (`out/sdk/src/core/cvar.cpp`) parsed with CLI11, which is all or nothing. A repeated flag, a bad
+   bool or a missing value threw, the catch only printed to stderr, and every flag was dropped,
+   including `--game_data_root`. On Windows the only visible symptom is
+   `--game_data_root was not provided`.
+   - Fixed in `../SplosionManRecomp` commit `6a176e8`. Each argument is handled on its own, and a
+     bad one is skipped with a warning. Flags registered later (GPU plugin) get the same checks.
+     Warnings are logged as `Command line: ...` once logging is up.
+   - Port it: copy `src/core/cvar.cpp`, `include/rex/cvar.h`, `src/ui/rex_app.cpp` (the
+     `TakeCommandLineWarnings` loop after `InitLogging`) and `tests/unit/core/cvar_test.cpp` from
+     `../SplosionManRecomp/out/sdk`, or diff them against yours first if Comic Jumper's SDK changed
+     those files. Then regenerate `patches/house-sdk.patch`.
+   - Check: `tools/linux/headless_run.sh badargs 90` with
+     `EXTRA="--log_level=debug --log_level=info --vsync=maybe --resolution_scale --frame_limit=abc"`
+     must boot normally and log four `Command line:` warnings; a clean run logs none.
+   - Unit tests: configure with `-DREXGLUE_BUILD_TESTS=ON`, build `unit_tests` (staged to
+     `out/sdk/out/linux-amd64/`), run `unit_tests "[cvar]"`. The test target needs
+     `thirdparty/xxHash` on its include path for `hash_test.cpp` (an upstream gap). The
+     `chrono_test` and `output_stamp_test` failures predate this change. Switch the option back
+     off afterwards.
+
+Also learned on SplosionMan's Windows build. Nothing to fix yet, but check before a Windows release:
+- **The Windows build always renders with Direct3D 12.** The xenos plugin picks D3D12 whenever
+  it's compiled in. Vulkan-only work (`gpu_null_vertex_stream_draw`, so probably the suit glow;
+  `render_target_path_vulkan`; the Vulkan presenter changes; the launcher's `--vulkan_*` flags) has
+  no effect there. Release notes and README should say DirectX 12, not Vulkan.
+- **The zip needs the MSVC runtime** (`MSVCP140`, `MSVCP140_ATOMIC_WAIT`, `VCRUNTIME140_1`). It
+  isn't bundled, so mention the VC++ Redistributable in the README.
+- **The game needs an audio output device.** Without one the guest crashes about 10 s in (null
+  read at guest `0x44`).
+- **Testing a Windows build under Wine:** see `../SplosionManRecomp/docs/headless.md` §12 and the
+  local runner `../SplosionManRecomp/out/wine/wine_run.sh` (untracked, written for SplosionMan;
+  adapt the exe name, game data and flags). It defaults to display `:95`, clear of Comic Jumper's
+  `:93`/`:94`.
+
 ## Pipeline
 
 ```bash
@@ -83,6 +157,7 @@ whenever `rexglue` relinks); the `if(EXISTS .../default.xex)` guard lives in tha
   the UI thread re-presented the same frame (with FSR) nonstop: 71% of a core, GPU busy 57%.
   SDK patch: `ImGuiDialog::WantsContinuousRepaint()` (toast: only while queued; `PerfOverlay`:
   false). On the user's display: UI thread 4%, GPU busy 23%. Keep new always-on dialogs at false.
+  This broke dialogs opened while the guest is held (F1 pause menu): see "Open" item 2 above.
 - **`skip_msr = true`** (codegen): all 479 `mtmsrd r13` regions only wrap `lwarx`/`stwcx.`, so the
   emulated global "interrupts off" mutex was pure contention (job counter `sub_821BD500`, Main vs
   Work threads). Hub uncapped 13.1 -> 11.9 ms. `ctr/xer/reserved_as_local` load fine but gain
